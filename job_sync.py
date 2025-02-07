@@ -57,11 +57,11 @@ def run_transaction(endpoint, params=None):
         print(f"Error making API request: {e}")
         return None
 
-def get_jobs_for_staff(staff_uuid, modified_since=None, page=1, pagesize=1000):
+def get_all_jobs(modified_since=None, page=1, pagesize=1000):
     """
     Fetch raw XML for all jobs belonging to a given staff UUID from the WorkflowMax2 API.
     """
-    endpoint = f"job.api/staff/{staff_uuid}"
+    endpoint = f"job.api/current"
     params = {}
 
     if modified_since:
@@ -80,15 +80,16 @@ def get_jobs_for_staff(staff_uuid, modified_since=None, page=1, pagesize=1000):
 # 5) Main Sync Logic
 # -----------------------------------------------------------------------------
 
-def sync_jobs_for_staff(staff_uuid, modified_since=None):
+def sync_jobs_for_staff(modified_since=None):
     """
     Fetch the raw XML for jobs assigned to a given staff UUID, parse them,
     and store/update them in the local database.
     """
-    raw_xml = get_jobs_for_staff(staff_uuid, modified_since=modified_since)
+    raw_xml = get_all_jobs()
     if not raw_xml:
         print("No job data returned or API call failed.")
         return
+
 
     # Parse the XML
     try:
@@ -302,5 +303,4 @@ def _parse_int(num_str):
 # 7) Main Entry Point
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
-    my_uuid = config("THOMAS_UUID")  # e.g., 9c51b2e0-e23b-41de-9188-85b764232d0e
-    sync_jobs_for_staff(my_uuid)
+    sync_jobs_for_staff()

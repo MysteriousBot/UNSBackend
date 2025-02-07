@@ -53,7 +53,7 @@ def run_transaction(endpoint, params=None):
 # --------------------------------------------------------------------------
 # 5) Fetch Time Sheet Entries
 # --------------------------------------------------------------------------
-def get_time_sheet_entries(staff_uuid, from_date, to_date):
+def get_time_sheet_entries(from_date, to_date):
     """
     Fetch time sheet entries for all staff members between from_date and to_date.
 
@@ -64,8 +64,9 @@ def get_time_sheet_entries(staff_uuid, from_date, to_date):
     from_date_str = from_date.strftime("%Y%m%d")
     to_date_str = to_date.strftime("%Y%m%d")
 
-    response = run_transaction(f"time.api/staff/{staff_uuid}", {"from": from_date_str, "to": to_date_str})
+    response = run_transaction("time.api/list", {"from": from_date_str, "to": to_date_str})
     
+
     if not response:
         return []
 
@@ -99,34 +100,38 @@ def get_time_sheet_entries(staff_uuid, from_date, to_date):
 # --------------------------------------------------------------------------
 # 6) Sync Time Entries to Database
 # --------------------------------------------------------------------------
-def sync_timesheets_to_db(staff_uuid):
+def sync_timesheets_to_db():
     """
     Syncs time sheet entries from the API into the Django database.
     """
     from_date = date(2025, 1, 1)  # Start from Jan 1, 2025
     to_date = date.today()
 
-    timesheet_entries = get_time_sheet_entries(staff_uuid, from_date, to_date)
+    timesheet_entries = get_time_sheet_entries(from_date, to_date)
     if not timesheet_entries:
         print("No time sheet entries found or API call failed.")
         return
 
     for entry in timesheet_entries:
-        Timesheet.objects.update_or_create(
+        # Check if the timesheet entry already exists
+        if Timesheet.objects.filter(uuid=entry["uuid"]).exists():
+            print(f"Skipping existing timesheet entry with UUID: {entry['uuid']}")
+            continue
+
+        # Create the new timesheet entry
+        Timesheet.objects.create(
             uuid=entry["uuid"],
-            defaults={
-                "job_id": entry["job_id"],
-                "job_name": entry["job_name"],
-                "task_uuid": entry["task_uuid"],
-                "task_name": entry["task_name"],
-                "staff_uuid": entry["staff_uuid"],
-                "staff_name": entry["staff_name"],
-                "entry_date": entry["entry_date"],
-                "minutes": entry["minutes"],
-                "note": entry["note"],
-                "billable": entry["billable"],
-                "invoice_task_uuid": entry["invoice_task_uuid"],
-            }
+            job_id=entry["job_id"],
+            job_name=entry["job_name"],
+            task_uuid=entry["task_uuid"],
+            task_name=entry["task_name"],
+            staff_uuid=entry["staff_uuid"],
+            staff_name=entry["staff_name"],
+            entry_date=entry["entry_date"],
+            minutes=entry["minutes"],
+            note=entry["note"],
+            billable=entry["billable"],
+            invoice_task_uuid=entry["invoice_task_uuid"],
         )
 
     print(f"Successfully synced {len(timesheet_entries)} time sheet records.")
@@ -135,5 +140,4 @@ def sync_timesheets_to_db(staff_uuid):
 # 7) Run Script
 # --------------------------------------------------------------------------
 if __name__ == "__main__":
-    my_uuid = config("THOMAS_UUID")
-    sync_timesheets_to_db(my_uuid)
+    sync_timesheets_to_db()

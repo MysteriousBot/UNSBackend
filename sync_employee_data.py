@@ -8,23 +8,22 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mysite.settings")
 import django
 django.setup()
 
-def sync_employee_data(employee_uuid):
+def sync_employee_data():
     """
     Syncs both job and time data for a given employee UUID.
     """
-    print(f"Starting sync for employee UUID: {employee_uuid}")
+    print(f"Starting sync for ALL employees")
 
     # Sync jobs
     print("Syncing jobs...")
-    sync_jobs_for_staff(employee_uuid)
+    sync_jobs_for_staff()
 
     # Sync timesheets
     print("Syncing timesheets...")
-    sync_timesheets_to_db(employee_uuid)
+    sync_timesheets_to_db()
+
 
     print("Sync complete.")
 
 if __name__ == "__main__":
-    # Example usage
-    employee_uuid = "9c51b2d3-88a5-4fe1-b1df-df3056039347"  # Ensure this is set in your .env file
-    sync_employee_data(employee_uuid) 
+    sync_employee_data() 
