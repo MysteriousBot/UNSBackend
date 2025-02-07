@@ -1,6 +1,36 @@
-asgiref==3.8.1
-Django==5.0.6
-gunicorn==22.0.0
-psycopg2==2.9.9
-sqlparse==0.5.0
-whitenoise==6.7.0
+# Django and REST Framework
+Django==5.0.1
+djangorestframework==3.14.0
+djangorestframework-simplejwt==5.3.1
+django-cors-headers==4.3.1
+djoser==2.2.2
+
+# Database and SQL Server Support
+django-mssql-backend  # For SQL Server support
+pyodbc>=4.0.39  # Required for SQL Server
+psycopg2-binary==2.9.9
+django-simple-history==3.4.0
+
+# Environment and Configuration
+python-dotenv==1.0.0
+python-decouple==3.8
+
+# API and requests handling
+requests>=2.31.0
+
+# WSGI server for production
+gunicorn==21.2.0
+
+# Filtering and API features
+django-filter==23.5
+django-reversion==5.0.8
+
+# Date/Time handling
+pytz==2023.3
+
+# Production dependencies
+whitenoise==6.6.0  # For serving static files
+dj-database-url==2.1.0  # For database URL configuration
+
+# Development tools
+django-debug-toolbar  # For development debugging
