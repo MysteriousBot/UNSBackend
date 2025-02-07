@@ -190,9 +190,9 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
-    'DEFAULT_PERMISSION_CLASSES': (
+    'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
-    ),
+    ],
 }
 
 # JWT settings
@@ -214,6 +214,7 @@ DJOSER = {
     'PERMISSIONS': {
         'user_create': ['rest_framework.permissions.AllowAny'],
         'user': ['rest_framework.permissions.IsAuthenticated'],
+        'user_list': ['rest_framework.permissions.IsAuthenticated'],
     },
     'HIDE_USERS': False,
     'TOKEN_MODEL': None,  # We're using JWT tokens

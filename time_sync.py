@@ -99,14 +99,13 @@ def get_time_sheet_entries(staff_uuid, from_date, to_date):
 # --------------------------------------------------------------------------
 # 6) Sync Time Entries to Database
 # --------------------------------------------------------------------------
-def sync_timesheets_to_db():
+def sync_timesheets_to_db(staff_uuid):
     """
     Syncs time sheet entries from the API into the Django database.
     """
     from_date = date(2025, 1, 1)  # Start from Jan 1, 2025
     to_date = date.today()
 
-    staff_uuid = config("OWEN_UUID")
     timesheet_entries = get_time_sheet_entries(staff_uuid, from_date, to_date)
     if not timesheet_entries:
         print("No time sheet entries found or API call failed.")
@@ -136,4 +135,5 @@ def sync_timesheets_to_db():
 # 7) Run Script
 # --------------------------------------------------------------------------
 if __name__ == "__main__":
-    sync_timesheets_to_db()
+    my_uuid = config("THOMAS_UUID")
+    sync_timesheets_to_db(my_uuid)

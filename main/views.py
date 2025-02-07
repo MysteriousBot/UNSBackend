@@ -13,6 +13,10 @@ from django.utils import timezone
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def check_staff_email(request):
+    """
+    Check if an email exists in Staff table and return the UUID if found.
+    This endpoint is publicly accessible to support registration.
+    """
     email = request.data.get('email')
     try:
         staff = Staff.objects.get(email=email)
@@ -80,31 +84,35 @@ def my_jobs(request, staff_uuid):
 @permission_classes([IsAuthenticated])
 def job_detail(request, job_id):
     try:
-        # Get job details
+        # First get the job to get its internal ID
         job = Job.objects.get(job_id=job_id)
         
-        # Get tasks for this job with just the fields we need
+        # Get all tasks for this job using the internal ID
         tasks = Task.objects.filter(job_id=job.id).values(
-            'id',
+            'uuid',
             'name',
-            'completed'  # Using the actual field name from the model
+            'estimated_minutes',
+            'completed'
         )
 
-        # Format response
-        response_data = {
-            'job_number': job.job_id,
-            'name': job.name,
-            'tasks': [
-                {
-                    'id': task['id'],
-                    'name': task['name'],
-                    'complete': task['completed']  # Using the actual field name
-                }
-                for task in tasks
-            ]
-        }
+        # Get actual minutes from timesheet entries for each task
+        for task in tasks:
+            actual_minutes = Timesheet.objects.filter(
+                task_uuid=task['uuid']
+            ).aggregate(
+                total_minutes=Sum('minutes')
+            )['total_minutes'] or 0
+            
+            task['actual_minutes'] = actual_minutes
+            task['remaining_minutes'] = task['estimated_minutes'] - actual_minutes if task['estimated_minutes'] else 0
+            task['status'] = 'Incomplete'  # You can add more status logic here
 
-        return Response(response_data)
+        return Response({
+            'job_id': job.job_id,
+            'job_name': job.name,  # Include the job name in the response
+            'tasks': tasks
+        })
+
     except Job.DoesNotExist:
         return Response({'error': 'Job not found'}, status=404)
     except Exception as e:
@@ -194,33 +202,53 @@ def staff_weekly_hours(request, staff_uuid, week_start=None):
         week_start_dt = timezone.make_aware(datetime.combine(week_start, datetime.min.time()))
         week_end_dt = timezone.make_aware(datetime.combine(week_end, datetime.max.time()))
 
-        # Get all timesheet entries for the week
+        # Get all timesheet entries and tasks for the week
         timesheet_entries = Timesheet.objects.filter(
             staff_uuid=staff_uuid,
             entry_date__range=[week_start_dt, week_end_dt]
         )
 
-        # Group by job and day
-        job_hours = {}
-        daily_hours = [0] * 7
+        # Get all tasks with their billable status
+        tasks = {
+            task.uuid: task.billable
+            for task in Task.objects.filter(
+                uuid__in=timesheet_entries.values_list('task_uuid', flat=True)
+            )
+        }
+
+        # Group by task and day
+        task_hours = {}
+        daily_hours = [{'billable': 0, 'non_billable': 0} for _ in range(7)]
 
         for entry in timesheet_entries:
             day_index = (entry.entry_date.date() - week_start).days
             hours = entry.minutes / 60
 
-            # Add to daily totals
-            daily_hours[day_index] = daily_hours[day_index] + hours
+            # Add to daily totals based on billable status
+            is_billable = tasks.get(entry.task_uuid, False)
+            if is_billable:
+                daily_hours[day_index]['billable'] += hours
+            else:
+                daily_hours[day_index]['non_billable'] += hours
 
-            # Add to job totals
-            if entry.job_id not in job_hours:
-                job_hours[entry.job_id] = {
+            # Create unique key for job+task combination
+            task_key = f"{entry.job_id}_{entry.task_uuid}"
+
+            if task_key not in task_hours:
+                task_hours[task_key] = {
                     'job_id': entry.job_id,
-                    'name': entry.job_name,
-                    'client_name': '',  # You might want to add this from your Job model
-                    'daily_hours': [{'date': (week_start + timedelta(days=i)).strftime('%Y-%m-%d'), 'hours': 0} for i in range(7)]
+                    'job_name': entry.job_name,
+                    'task_uuid': entry.task_uuid,
+                    'task_name': entry.task_name,
+                    'daily_hours': [{'date': (week_start + timedelta(days=i)).strftime('%Y-%m-%d'), 
+                                   'hours': 0,
+                                   'notes': []} for i in range(7)]
                 }
             
-            job_hours[entry.job_id]['daily_hours'][day_index]['hours'] += hours
+            day_hours = task_hours[task_key]['daily_hours'][day_index]
+            day_hours['hours'] += hours
+            if entry.note:
+                day_hours['notes'].append(entry.note)
 
         # Format daily summary
         week_data = []
@@ -229,16 +257,69 @@ def staff_weekly_hours(request, staff_uuid, week_start=None):
             week_data.append({
                 'date': current_date.strftime('%Y-%m-%d'),
                 'day': current_date.strftime('%a'),
-                'hours': daily_hours[i]
+                'billable': daily_hours[i]['billable'],
+                'non_billable': daily_hours[i]['non_billable'],
+                'total': daily_hours[i]['billable'] + daily_hours[i]['non_billable']
             })
 
         return Response({
             'week_start': week_start.strftime('%Y-%m-%d'),
             'week_end': week_end.strftime('%Y-%m-%d'),
             'daily_hours': week_data,
-            'job_hours': job_hours
+            'task_hours': task_hours
         })
 
     except Exception as e:
         print(f"Error in staff_weekly_hours view: {str(e)}")
         return Response({'error': str(e)}, status=500)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def all_jobs(request):
+    try:
+        print(f"Fetching all jobs")
+        
+        # Get all job IDs assigned to the staff member
+        job_assignments = JobAssignedStaff.objects.all()
+        print(f"Found {job_assignments.count()} job assignments")
+        
+        job_ids = job_assignments.values_list('job_id', flat=True)
+        print(f"Job IDs: {list(job_ids)}")
+
+        # Get all jobs with their related client data
+        jobs = Job.objects.filter(id__in=job_ids).select_related('client').order_by('due_date').values(
+            'id',
+            'job_id',
+            'name',
+            'client_uuid',
+            'state',
+            'due_date'
+        )
+        print(f"Found {jobs.count()} jobs")
+
+        # Get all client data in one query
+        client_uuids = [job['client_uuid'] for job in jobs]
+        clients = {
+            client.uuid: client.name 
+            for client in Client.objects.filter(uuid__in=client_uuids)
+        }
+
+        # Transform the data to match the frontend expectations
+        transformed_jobs = []
+        for job in jobs:
+            transformed_jobs.append({
+                'id': job['id'],
+                'job_number': job['job_id'],
+                'name': job['name'],
+                'client_name': clients.get(job['client_uuid'], 'Unknown Client'),  # Get client name from dict
+                'status': job['state'],
+                'due_date': job['due_date']
+            })
+
+        return Response(transformed_jobs)
+    except Exception as e:
+        print(f"Error in my_jobs view: {str(e)}")
+        return Response(
+            {'error': str(e)}, 
+            status=500
+        )

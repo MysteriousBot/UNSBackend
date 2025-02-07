@@ -10,19 +10,33 @@ class CustomUserCreateSerializer(UserCreateSerializer):
         fields = ('id', 'email', 'username', 'password')
         
     def validate(self, attrs):
-        print("Received data:", attrs)  # For debugging
+        # Check if email exists in Staff table first
+        email = attrs.get('email')
+        try:
+            staff = Staff.objects.get(email=email)
+        except Staff.DoesNotExist:
+            raise serializers.ValidationError({
+                'email': 'Email not found in staff records. Please contact your administrator.'
+            })
+            
+        # If we found the staff record, continue with normal validation
         return super().validate(attrs)
         
     def create(self, validated_data):
         user = super().create(validated_data)
         
-        # Create or update the user profile with staff_uuid
-        staff_uuid = self.context['request'].data.get('staff_uuid')
-        if staff_uuid:
+        # Associate staff UUID with user profile
+        try:
+            staff = Staff.objects.get(email=user.email)
             UserProfile.objects.update_or_create(
                 user=user,
-                defaults={'staff_uuid': staff_uuid}
+                defaults={'staff_uuid': staff.uuid}
             )
+        except Staff.DoesNotExist:
+            # This shouldn't happen due to validation, but just in case
+            raise serializers.ValidationError({
+                'email': 'Failed to associate staff record. Please contact your administrator.'
+            })
         
         return user
 
