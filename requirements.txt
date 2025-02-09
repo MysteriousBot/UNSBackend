@@ -34,3 +34,6 @@ dj-database-url==2.1.0  # For database URL configuration
 
 # Development tools
 django-debug-toolbar  # For development debugging
+
+# Add MQTT client   
+paho-mqtt==2.1.0
