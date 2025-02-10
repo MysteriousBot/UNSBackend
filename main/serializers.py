@@ -43,13 +43,17 @@ class CustomUserCreateSerializer(UserCreateSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
-        fields = ('id', 'staff_uuid', 'phone', 'title')
+        fields = ('id', 'staff_uuid', 'phone', 'title', 'role')
         read_only_fields = ('user',)
 
 class UserSerializer(serializers.ModelSerializer):
     profile = UserProfileSerializer()
+    is_admin = serializers.SerializerMethodField()
     
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'profile')
-        read_only_fields = ('email', 'username') 
+        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'profile', 'is_admin')
+        read_only_fields = ('email', 'username')
+
+    def get_is_admin(self, obj):
+        return obj.profile.is_admin 

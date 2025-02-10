@@ -30,13 +30,33 @@ SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
-# Update ALLOWED_HOSTS to include localhost
+# Update ALLOWED_HOSTS to include your network IP
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
-    *config("ALLOWED_HOSTS").split(",")  # Keep your existing hosts
+    '192.168.10.101',  # Add your IP address
+    '192.168.10.*',    # Allow all IPs in your subnet
+    *config("ALLOWED_HOSTS").split(",")
 ]
-CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS").split(",")
+
+# Update CORS settings
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "http://192.168.10.101:8080",  # Add your IP address
+    "http://192.168.10.101:8000",  # Add your IP address
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "http://192.168.10.101:8080",  # Add your IP address
+    "http://192.168.10.101:8000",  # Add your IP address
+]
 
 # FORM SUBMISSION
 # Comment out the following line and place your railway URL, and your production URL in the array.
@@ -64,14 +84,6 @@ INSTALLED_APPS = [
 ]
 
 # Also make sure CORS settings match
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8080",  # Vue.js development server
-    "http://127.0.0.1:8080",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-]
-
-# Add these additional CORS settings
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = [
     'DELETE',

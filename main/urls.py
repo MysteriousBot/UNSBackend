@@ -15,4 +15,6 @@ urlpatterns = [
     path('api/clients/<str:client_id>/', views.client_detail, name='client-detail'),
     path('api/clients/<str:client_id>/jobs/', views.client_jobs, name='client-jobs'),
     path('api/clients/<str:client_id>/contacts/', views.client_contacts, name='client-contacts'),
+    path('api/admin/staff/', views.admin_staff_list, name='admin-staff-list'),
+    path('api/admin/staff/<str:staff_uuid>/', views.admin_staff_detail, name='admin-staff-detail'),
 ] 

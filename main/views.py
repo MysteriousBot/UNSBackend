@@ -8,6 +8,7 @@ from .models import Staff, Job, JobAssignedStaff, Client, Task, Timesheet, Conta
 from datetime import datetime, timedelta
 from django.utils import timezone
 import uuid
+from .utils import standardize_uuid, format_uuid_with_hyphens
 
 # Create your views here.
 
@@ -188,117 +189,131 @@ def toggle_client_favorite(request, uuid):
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def staff_weekly_hours(request, staff_uuid, week_start=None):
-    if request.method == 'GET':
-        try:
-            # If no week_start provided, default to current week's Monday
-            if not week_start:
-                today = timezone.now().date()
-                week_start = today - timedelta(days=today.weekday())
-            else:
-                # Parse the date and make it timezone aware
-                week_start = datetime.strptime(week_start, '%Y-%m-%d').date()
-            
-            week_end = week_start + timedelta(days=6)
+    try:
+        # Standardize UUID format
+        staff_uuid = staff_uuid.replace('-', '')
+        formatted_staff_uuid = '-'.join([
+            staff_uuid[:8],
+            staff_uuid[8:12],
+            staff_uuid[12:16],
+            staff_uuid[16:20],
+            staff_uuid[20:]
+        ])
 
-            # Make the datetime range timezone aware
-            week_start_dt = timezone.make_aware(datetime.combine(week_start, datetime.min.time()))
-            week_end_dt = timezone.make_aware(datetime.combine(week_end, datetime.max.time()))
-
-            # Get all timesheet entries and tasks for the week
-            timesheet_entries = Timesheet.objects.filter(
-                staff_uuid=staff_uuid,
-                entry_date__range=[week_start_dt, week_end_dt]
-            )
-
-            # Get all tasks with their billable status
-            tasks = {
-                task.uuid: task.billable
-                for task in Task.objects.filter(
-                    uuid__in=timesheet_entries.values_list('task_uuid', flat=True)
-                )
-            }
-
-            # Group by task and day
-            task_hours = {}
-            daily_hours = [{'billable': 0, 'non_billable': 0} for _ in range(7)]
-
-            for entry in timesheet_entries:
-                day_index = (entry.entry_date.date() - week_start).days
-                hours = entry.minutes / 60
-
-                # Add to daily totals based on billable status
-                is_billable = tasks.get(entry.task_uuid, False)
-                if is_billable:
-                    daily_hours[day_index]['billable'] += hours
+        if request.method == 'GET':
+            try:
+                # If no week_start provided, default to current week's Monday
+                if not week_start:
+                    today = timezone.now().date()
+                    week_start = today - timedelta(days=today.weekday())
                 else:
-                    daily_hours[day_index]['non_billable'] += hours
-
-                # Create unique key for job+task combination
-                task_key = f"{entry.job_id}_{entry.task_uuid}"
-
-                if task_key not in task_hours:
-                    task_hours[task_key] = {
-                        'job_id': entry.job_id,
-                        'job_name': entry.job_name,
-                        'task_uuid': entry.task_uuid,
-                        'task_name': entry.task_name,
-                        'daily_hours': [{'date': (week_start + timedelta(days=i)).strftime('%Y-%m-%d'), 
-                                       'hours': 0,
-                                       'notes': []} for i in range(7)]
-                    }
+                    # Parse the date and make it timezone aware
+                    week_start = datetime.strptime(week_start, '%Y-%m-%d').date()
                 
-                day_hours = task_hours[task_key]['daily_hours'][day_index]
-                day_hours['hours'] += hours
-                if entry.note:
-                    day_hours['notes'].append(entry.note)
+                week_end = week_start + timedelta(days=6)
 
-            # Format daily summary
-            week_data = []
-            for i in range(7):
-                current_date = week_start + timedelta(days=i)
-                week_data.append({
-                    'date': current_date.strftime('%Y-%m-%d'),
-                    'day': current_date.strftime('%a'),
-                    'billable': daily_hours[i]['billable'],
-                    'non_billable': daily_hours[i]['non_billable'],
-                    'total': daily_hours[i]['billable'] + daily_hours[i]['non_billable']
-                })
+                # Make the datetime range timezone aware
+                week_start_dt = timezone.make_aware(datetime.combine(week_start, datetime.min.time()))
+                week_end_dt = timezone.make_aware(datetime.combine(week_end, datetime.max.time()))
 
-            return Response({
-                'week_start': week_start.strftime('%Y-%m-%d'),
-                'week_end': week_end.strftime('%Y-%m-%d'),
-                'daily_hours': week_data,
-                'task_hours': task_hours
-            })
-        except Exception as e:
-            print(f"Error fetching weekly hours: {str(e)}")
-            return Response({'error': str(e)}, status=500)
-    
-    elif request.method == 'POST':
-        try:
-            entries = request.data.get('entries', [])
-            
-            for entry in entries:
-                task_uuid = entry['task_uuid']
-                job_id = entry['job_id']
-                
-                for time_entry in entry['entries']:
-                    # Create a new Timesheet entry
-                    Timesheet.objects.create(
-                        uuid=uuid.uuid4(),  # Generate a new UUID for each entry
-                        staff_uuid=staff_uuid,
-                        task_uuid=task_uuid,
-                        job_id=job_id,
-                        entry_date=datetime.strptime(time_entry['date'], '%Y-%m-%d'),
-                        minutes=int(float(time_entry['hours']) * 60),  # Convert hours to minutes
-                        note='\n'.join(time_entry['notes']) if time_entry['notes'] else '',
-                        billable=True  # Default to billable
+                # Get all timesheet entries and tasks for the week
+                timesheet_entries = Timesheet.objects.filter(
+                    staff_uuid=formatted_staff_uuid,
+                    entry_date__range=[week_start_dt, week_end_dt]
+                )
+
+                # Get all tasks with their billable status
+                tasks = {
+                    task.uuid: task.billable
+                    for task in Task.objects.filter(
+                        uuid__in=timesheet_entries.values_list('task_uuid', flat=True)
                     )
-            
-            return Response({'message': 'Timesheet submitted successfully'})
-        except Exception as e:
-            print(f"Error submitting timesheet: {str(e)}")
-            return Response({'error': str(e)}, status=500)
+                }
+
+                # Group by task and day
+                task_hours = {}
+                daily_hours = [{'billable': 0, 'non_billable': 0} for _ in range(7)]
+
+                for entry in timesheet_entries:
+                    day_index = (entry.entry_date.date() - week_start).days
+                    hours = entry.minutes / 60
+
+                    # Add to daily totals based on billable status
+                    is_billable = tasks.get(entry.task_uuid, False)
+                    if is_billable:
+                        daily_hours[day_index]['billable'] += hours
+                    else:
+                        daily_hours[day_index]['non_billable'] += hours
+
+                    # Create unique key for job+task combination
+                    task_key = f"{entry.job_id}_{entry.task_uuid}"
+
+                    if task_key not in task_hours:
+                        task_hours[task_key] = {
+                            'job_id': entry.job_id,
+                            'job_name': entry.job_name,
+                            'task_uuid': entry.task_uuid,
+                            'task_name': entry.task_name,
+                            'daily_hours': [{'date': (week_start + timedelta(days=i)).strftime('%Y-%m-%d'), 
+                                           'hours': 0,
+                                           'notes': []} for i in range(7)]
+                        }
+                    
+                    day_hours = task_hours[task_key]['daily_hours'][day_index]
+                    day_hours['hours'] += hours
+                    if entry.note:
+                        day_hours['notes'].append(entry.note)
+
+                # Format daily summary
+                week_data = []
+                for i in range(7):
+                    current_date = week_start + timedelta(days=i)
+                    week_data.append({
+                        'date': current_date.strftime('%Y-%m-%d'),
+                        'day': current_date.strftime('%a'),
+                        'billable': daily_hours[i]['billable'],
+                        'non_billable': daily_hours[i]['non_billable'],
+                        'total': daily_hours[i]['billable'] + daily_hours[i]['non_billable']
+                    })
+
+                return Response({
+                    'week_start': week_start.strftime('%Y-%m-%d'),
+                    'week_end': week_end.strftime('%Y-%m-%d'),
+                    'daily_hours': week_data,
+                    'task_hours': task_hours
+                })
+            except Exception as e:
+                print(f"Error fetching weekly hours: {str(e)}")
+                return Response({'error': str(e)}, status=500)
+        
+        elif request.method == 'POST':
+            try:
+                entries = request.data.get('entries', [])
+                
+                for entry in entries:
+                    task_uuid = entry['task_uuid']
+                    job_id = entry['job_id']
+                    
+                    for time_entry in entry['entries']:
+                        # Create a new Timesheet entry
+                        Timesheet.objects.create(
+                            uuid=uuid.uuid4(),  # Generate a new UUID for each entry
+                            staff_uuid=formatted_staff_uuid,
+                            task_uuid=task_uuid,
+                            job_id=job_id,
+                            entry_date=datetime.strptime(time_entry['date'], '%Y-%m-%d'),
+                            minutes=int(float(time_entry['hours']) * 60),  # Convert hours to minutes
+                            note='\n'.join(time_entry['notes']) if time_entry['notes'] else '',
+                            billable=True  # Default to billable
+                        )
+                
+                return Response({'message': 'Timesheet submitted successfully'})
+            except Exception as e:
+                print(f"Error submitting timesheet: {str(e)}")
+                return Response({'error': str(e)}, status=500)
+    except Exception as e:
+        print(f"Error in staff_weekly_hours view: {str(e)}")
+        return Response({'error': str(e)}, status=500)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -460,58 +475,69 @@ def job_tasks(request, job_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def submit_timesheet(request, staff_uuid):
+    """Submit timesheet entries for a staff member"""
     try:
+        # Standardize UUIDs by removing hyphens
+        staff_uuid_clean = standardize_uuid(staff_uuid)
+        user_staff_uuid = standardize_uuid(request.user.profile.staff_uuid) if request.user.profile.staff_uuid else None
+        
+        is_admin = request.user.profile.is_admin
+        is_own_timesheet = user_staff_uuid == staff_uuid_clean
+
+        if not (is_admin or is_own_timesheet):
+            return Response(
+                {'error': 'You can only submit timesheets for yourself unless you are an admin'}, 
+                status=403
+            )
+
+        try:
+            staff = Staff.objects.get(uuid=format_uuid_with_hyphens(staff_uuid))
+            staff_name = staff.name
+        except Staff.DoesNotExist:
+            return Response(
+                {'error': f'Staff not found with UUID: {staff_uuid}'}, 
+                status=404
+            )
+
         entries = request.data.get('entries', [])
         print(f"Received entries: {entries}")
-        
+
+        # Process entries
         for entry in entries:
-            task_uuid = entry['task_uuid']
-            job_id = entry['job_id']
-            job_name = Job.objects.get(job_id=job_id).name
+            task_uuid = entry.get('task_uuid')
+            job_id = entry.get('job_id')
             
-            print(f"Processing entry - Task UUID: {task_uuid}, Job ID: {job_id}, Job Name: {job_name}")
-
             try:
-                staff = Staff.objects.get(uuid=staff_uuid)
-                staff_name = staff.name
+                job = Job.objects.get(job_id=job_id)
+                job_name = job.name
                 
-                try:
-                    task = Task.objects.get(uuid=task_uuid)
-                    task_name = task.name
-                    print(f"Found task: {task_name}")
-                except Task.DoesNotExist:
-                    print(f"Task not found with UUID: {task_uuid}")
-                    return Response(
-                        {'error': f'Task not found with UUID: {task_uuid}'}, 
-                        status=404
-                    )
+                task = Task.objects.get(uuid=task_uuid)
+                task_name = task.name
                 
-                for time_entry in entry['entries']:
-                    entry_date = datetime.strptime(time_entry['date'], '%Y-%m-%d')
-                    minutes = int(float(time_entry['hours']) * 60)
-                    notes = '\n'.join(time_entry['notes']) if time_entry['notes'] else ''
+                for time_entry in entry.get('entries', []):
+                    entry_date = time_entry['date']
+                    hours = time_entry['hours']
+                    # Handle notes as a string
+                    notes = time_entry.get('notes', '')
+                    if isinstance(notes, list):
+                        notes = '\n'.join(filter(None, notes))
+                    minutes = int(float(hours) * 60)
 
-                    # Try to find an existing entry for this task, date, and staff member
                     existing_entry = Timesheet.objects.filter(
-                        staff_uuid=staff_uuid,
+                        staff_uuid=format_uuid_with_hyphens(staff_uuid),
                         task_uuid=task_uuid,
                         job_id=job_id,
                         entry_date=entry_date
                     ).first()
 
                     if existing_entry:
-                        print(f"Updating existing entry for date: {time_entry['date']}")
-                        # Update existing entry if minutes or notes have changed
-                        if existing_entry.minutes != minutes or existing_entry.note != notes:
-                            existing_entry.minutes = minutes
-                            existing_entry.note = notes
-                            existing_entry.save()
+                        existing_entry.minutes = minutes
+                        existing_entry.note = notes  # Store as string
+                        existing_entry.save()
                     else:
-                        print(f"Creating new entry for date: {time_entry['date']}")
-                        # Create new entry only if it doesn't exist
                         Timesheet.objects.create(
                             uuid=uuid.uuid4(),
-                            staff_uuid=staff_uuid,
+                            staff_uuid=format_uuid_with_hyphens(staff_uuid),
                             staff_name=staff_name,
                             task_name=task_name,
                             task_uuid=task_uuid,
@@ -519,22 +545,84 @@ def submit_timesheet(request, staff_uuid):
                             job_name=job_name,
                             entry_date=entry_date,
                             minutes=minutes,
-                            note=notes,
+                            note=notes,  # Store as string
                             billable=True
                         )
 
-            except Staff.DoesNotExist:
-                print(f"Staff not found with UUID: {staff_uuid}")
+            except (Job.DoesNotExist, Task.DoesNotExist) as e:
                 return Response(
-                    {'error': f'Staff not found with UUID: {staff_uuid}'}, 
+                    {'error': str(e)},
                     status=404
                 )
-        
+
         return Response({'message': 'Timesheet submitted successfully'})
     except Exception as e:
         print(f"Error submitting timesheet: {str(e)}")
         print(f"Request data: {request.data}")
         return Response(
             {'error': f'Failed to submit timesheet: {str(e)}'}, 
+            status=500
+        )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_staff_list(request):
+    """Get all staff members for admin view"""
+    try:
+        # Check if user has admin role
+        if not request.user.profile.is_admin:
+            return Response(
+                {'error': 'Admin access required'}, 
+                status=403
+            )
+            
+        staff = Staff.objects.all().values(
+            'uuid',
+            'name',
+            'email',
+            'phone',
+            'mobile',
+            'payroll_code'
+        ).order_by('name')
+        
+        return Response(list(staff))
+    except Exception as e:
+        print(f"Error in admin_staff_list: {str(e)}")
+        return Response(
+            {'error': str(e)}, 
+            status=500
+        )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_staff_detail(request, staff_uuid):
+    """Get details for a specific staff member"""
+    try:
+        if not request.user.profile.is_admin:
+            return Response(
+                {'error': 'Admin access required'}, 
+                status=403
+            )
+            
+        staff = Staff.objects.filter(uuid=staff_uuid).values(
+            'uuid',
+            'name',
+            'email',
+            'phone',
+            'mobile',
+            'payroll_code'
+        ).first()
+        
+        if not staff:
+            return Response(
+                {'error': 'Staff member not found'}, 
+                status=404
+            )
+        
+        return Response(staff)
+    except Exception as e:
+        print(f"Error in admin_staff_detail: {str(e)}")
+        return Response(
+            {'error': str(e)}, 
             status=500
         )

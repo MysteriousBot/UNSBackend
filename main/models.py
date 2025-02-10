@@ -217,8 +217,19 @@ class UserProfile(models.Model):
     """
     User profile that extends the default User model and links to Staff via UUID
     """
+    ROLE_CHOICES = [
+        ('STAFF', 'Staff'),
+        ('ADMIN', 'Administrator'),
+        ('MANAGER', 'Manager'),
+    ]
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     staff_uuid = models.CharField(max_length=36, null=True, blank=True)  # To store Staff UUID
+    role = models.CharField(
+        max_length=20, 
+        choices=ROLE_CHOICES,
+        default='STAFF'
+    )
     
     # Additional profile fields
     phone = models.CharField(max_length=50, blank=True)
@@ -226,6 +237,14 @@ class UserProfile(models.Model):
     
     def __str__(self):
         return f"{self.user.email}'s profile"
+
+    @property
+    def is_admin(self):
+        return self.role == 'ADMIN'
+
+    @property
+    def is_manager(self):
+        return self.role == 'MANAGER'
 
 # Signal to create user profile automatically
 @receiver(post_save, sender=User)
