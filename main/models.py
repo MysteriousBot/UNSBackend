@@ -237,4 +237,23 @@ def create_user_profile(sender, instance, created, **kwargs):
 def save_user_profile(sender, instance, **kwargs):
     instance.profile.save()
 
+class TimeEntry(models.Model):
+    staff_uuid = models.UUIDField()
+    task_uuid = models.UUIDField()
+    job_id = models.CharField(max_length=50)
+    date = models.DateField()
+    hours = models.DecimalField(max_digits=4, decimal_places=2)
+    notes = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'time_entries'
+        ordering = ['-date']
+        # Add unique constraint to prevent duplicate entries
+        unique_together = ['staff_uuid', 'task_uuid', 'job_id', 'date']
+
+    def __str__(self):
+        return f"{self.staff_uuid} - {self.job_id} - {self.date}"
+
 
